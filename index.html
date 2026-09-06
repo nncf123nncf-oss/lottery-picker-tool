@@ -76,6 +76,10 @@
   button:active {
     opacity: 0.85;
   }
+  button:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
   button.secondary {
     background: var(--surface);
     color: var(--accent);
@@ -164,6 +168,11 @@
     resultBlock.style.display = 'none';
   }
 
+  function showCopyError(message) {
+    errorEl.textContent = '⚠ ' + message;
+    errorEl.style.display = 'block';
+  }
+
   function clearError() {
     errorEl.style.display = 'none';
     errorEl.textContent = '';
@@ -250,8 +259,10 @@
     currentWinners = shuffled.slice(0, count);
 
     resultBlock.style.display = 'flex';
+    drawButton.disabled = true;
     runDrumroll(function () {
       renderWinners(currentWinners);
+      drawButton.disabled = false;
     });
   });
 
@@ -263,6 +274,7 @@
     var originalLabel = copyButton.textContent;
 
     function showCopied() {
+      clearError();
       copyButton.textContent = 'コピーしました';
       setTimeout(function () {
         copyButton.textContent = originalLabel;
@@ -272,8 +284,10 @@
     function fallbackCopy() {
       var textarea = document.createElement('textarea');
       textarea.value = text;
-      textarea.style.position = 'fixed';
       textarea.style.opacity = '0';
+      textarea.style.height = '0';
+      textarea.style.overflow = 'hidden';
+      textarea.setAttribute('aria-hidden', 'true');
       document.body.appendChild(textarea);
       textarea.focus();
       textarea.select();
@@ -287,7 +301,7 @@
       if (succeeded) {
         showCopied();
       } else {
-        showError('コピーに失敗しました。手動で選択してコピーしてください。');
+        showCopyError('コピーに失敗しました。手動で選択してコピーしてください。');
       }
     }
 
