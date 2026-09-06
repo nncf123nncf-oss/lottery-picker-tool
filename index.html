@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>抽選ツール</title>
+<style>
+  :root {
+    --bg: #F2A9A0;
+    --surface: #FFFFFF;
+    --text-primary: #4A2420;
+    --text-secondary: #8A5750;
+    --accent: #D9483A;
+    --danger: #C0392B;
+    --border: #E0B3AC;
+  }
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text-primary);
+    padding: 24px 16px;
+  }
+  main {
+    max-width: 480px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  h1 {
+    font-size: 18px;
+    margin: 0 0 8px 0;
+    text-align: center;
+  }
+  label {
+    display: block;
+    font-size: 14px;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+  }
+  textarea, input[type="number"] {
+    width: 100%;
+    font-size: 16px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text-primary);
+    font-family: inherit;
+  }
+  textarea {
+    min-height: 160px;
+    resize: vertical;
+    line-height: 1.5;
+  }
+  .field {
+    background: transparent;
+  }
+  button {
+    width: 100%;
+    font-size: 16px;
+    padding: 14px;
+    border: none;
+    border-radius: 6px;
+    background: var(--accent);
+    color: #FFFFFF;
+    font-family: inherit;
+    font-weight: bold;
+    cursor: pointer;
+    min-height: 44px;
+  }
+  button:active {
+    opacity: 0.85;
+  }
+  button.secondary {
+    background: var(--surface);
+    color: var(--accent);
+    border: 1px solid var(--accent);
+  }
+  #error {
+    display: none;
+    font-size: 14px;
+    color: var(--danger);
+    background: #FBEAE8;
+    border: 1px solid var(--danger);
+    border-radius: 6px;
+    padding: 10px 12px;
+  }
+  #resultBlock {
+    display: none;
+    flex-direction: column;
+    gap: 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+  }
+  #drumroll {
+    font-size: 16px;
+    text-align: center;
+    min-height: 24px;
+    color: var(--text-secondary);
+  }
+  #winnerList {
+    display: none;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .winner-item {
+    font-size: 16px;
+    padding: 10px 12px;
+    background: #FBEEEC;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    word-break: break-word;
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>抽選ツール</h1>
+
+  <div class="field">
+    <label for="entrants">応募者リスト（1行1名）</label>
+    <textarea id="entrants" placeholder="例：&#10;山田太郎&#10;佐藤花子&#10;鈴木一郎"></textarea>
+  </div>
+
+  <div class="field">
+    <label for="winnerCount">当選人数</label>
+    <input type="number" id="winnerCount" min="1" inputmode="numeric">
+  </div>
+
+  <button id="drawButton" type="button">抽選する</button>
+
+  <div id="error"></div>
+
+  <div id="resultBlock">
+    <div id="drumroll"></div>
+    <div id="winnerList"></div>
+    <button id="copyButton" class="secondary" type="button">コピー</button>
+  </div>
+</main>
+
+<script>
+(function () {
+  var entrantsEl = document.getElementById('entrants');
+  var winnerCountEl = document.getElementById('winnerCount');
+  var drawButton = document.getElementById('drawButton');
+  var errorEl = document.getElementById('error');
+  var resultBlock = document.getElementById('resultBlock');
+  var drumrollEl = document.getElementById('drumroll');
+  var winnerListEl = document.getElementById('winnerList');
+  var copyButton = document.getElementById('copyButton');
+
+  var currentWinners = [];
+
+  function showError(message) {
+    errorEl.textContent = '⚠ ' + message;
+    errorEl.style.display = 'block';
+    resultBlock.style.display = 'none';
+  }
+
+  function clearError() {
+    errorEl.style.display = 'none';
+    errorEl.textContent = '';
+  }
+
+  function parseEntrants(raw) {
+    return raw
+      .split('\n')
+      .map(function (line) { return line.trim(); })
+      .filter(function (line) { return line.length > 0; });
+  }
+
+  // Fisher-Yates shuffle
+  function shuffle(array) {
+    var result = array.slice();
+    for (var i = result.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var tmp = result[i];
+      result[i] = result[j];
+      result[j] = tmp;
+    }
+    return result;
+  }
+
+  function runDrumroll(callback) {
+    var frames = ['抽選中…', '抽選中…！', '抽選中…！！'];
+    var count = 0;
+    var maxFrames = 6;
+    drumrollEl.textContent = frames[0];
+    var timer = setInterval(function () {
+      count++;
+      drumrollEl.textContent = frames[count % frames.length];
+      if (count >= maxFrames) {
+        clearInterval(timer);
+        drumrollEl.textContent = '当選発表';
+        callback();
+      }
+    }, 200);
+  }
+
+  function renderWinners(winners) {
+    winnerListEl.innerHTML = '';
+    winners.forEach(function (name) {
+      var item = document.createElement('div');
+      item.className = 'winner-item';
+      item.textContent = name;
+      winnerListEl.appendChild(item);
+    });
+    winnerListEl.style.display = 'flex';
+  }
+
+  drawButton.addEventListener('click', function () {
+    clearError();
+    winnerListEl.style.display = 'none';
+    winnerListEl.innerHTML = '';
+    drumrollEl.textContent = '';
+
+    var entrants = parseEntrants(entrantsEl.value);
+    var countRaw = winnerCountEl.value;
+    var count = Number(countRaw);
+
+    if (entrants.length === 0) {
+      showError('応募者リストを入力してください。');
+      return;
+    }
+    if (countRaw === '' || isNaN(count) || !isFinite(count)) {
+      showError('当選人数を入力してください。');
+      return;
+    }
+    if (count <= 0) {
+      showError('当選人数は1以上を指定してください。');
+      return;
+    }
+    if (!Number.isInteger(count)) {
+      showError('当選人数は整数で指定してください。');
+      return;
+    }
+    if (count > entrants.length) {
+      showError('当選人数が応募者数（' + entrants.length + '名）を超えています。');
+      return;
+    }
+
+    var shuffled = shuffle(entrants);
+    currentWinners = shuffled.slice(0, count);
+
+    resultBlock.style.display = 'flex';
+    runDrumroll(function () {
+      renderWinners(currentWinners);
+    });
+  });
+
+  copyButton.addEventListener('click', function () {
+    var text = currentWinners.join('\n');
+    if (!text) {
+      return;
+    }
+    var originalLabel = copyButton.textContent;
+
+    function showCopied() {
+      copyButton.textContent = 'コピーしました';
+      setTimeout(function () {
+        copyButton.textContent = originalLabel;
+      }, 1500);
+    }
+
+    function fallbackCopy() {
+      var textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      var succeeded = false;
+      try {
+        succeeded = document.execCommand('copy');
+      } catch (e) {
+        succeeded = false;
+      }
+      document.body.removeChild(textarea);
+      if (succeeded) {
+        showCopied();
+      } else {
+        showError('コピーに失敗しました。手動で選択してコピーしてください。');
+      }
+    }
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(showCopied, fallbackCopy);
+    } else {
+      fallbackCopy();
+    }
+  });
+})();
+</script>
+</body>
+</html>
